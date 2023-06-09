@@ -42,7 +42,6 @@ def volume_to_mass(volume,temperature,pressure,gas='methane',method='ideal'):
         Method for calculating molar mass, options are
           'ideal' - Ideal gas law
           'vdw' - van der Waals equation of state
-          'Mario' - Mario's equation of state
         Default is 'ideal'
     
     Outputs:
@@ -109,10 +108,6 @@ def volume_to_mass(volume,temperature,pressure,gas='methane',method='ideal'):
             moles = np.real(np.roots(coeff[:,0])[2].astype(float))
             #Calculate mass from n
             #mass = n*molar_mass
-    elif method == 'Mario':
-        #Calculate the density of the gas at the given temperature and pressure
-        density = pressure*molar_mass/(R*temperature)
-        #Dont understand this.. 
 
     return(moles)
     
