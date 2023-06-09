@@ -8,6 +8,10 @@ Content:
 
 volume_to_mass(volume,density,depth,gas='methane'): 
 Function that calculates the molar mass of a volume of gas
+
+PresfromDepth(depth,rho)
+Function that calculates the hydrostatic pressure from depth and density
+
 '''
 #Imports
 import numpy as np
