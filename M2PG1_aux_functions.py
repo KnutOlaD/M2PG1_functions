@@ -2,7 +2,7 @@
 Package containing functions that does various calculations for M2PG1 output and/or input data that
 does not have the main purpose of producing plots/input/output files.  
 
-author: Knut Ola Dølven
+Author: Knut Ola Dølven
 
 Content:
 
@@ -11,6 +11,18 @@ Function that calculates the molar mass of a volume of gas
 
 PresfromDepth(depth,rho)
 Function that calculates the hydrostatic pressure from depth and density
+
+get_density(temperature,salinity)
+Function that calculates the density of water using the UNESCO 1981 equation of state
+
+get_brsm(bubble_size_range=[0.1,10],
+                temperature=5,
+                salinity=35,
+                model=None,
+                tuning=None,
+                resolution=100)
+Function that uses different bubble rising speed models to return the bubble rising
+speed for all bubbles in the bubble size range with resolution resolution.
 
 '''
 #Imports
@@ -182,3 +194,161 @@ plt.ylabel('[mol]')
 plt.legend()
 plt.show()
 
+##########################################################################################
+
+def get_density(temperature,salinity,pressure=None):
+    '''
+    Function that calculates the density of water using the UNESCO 1981 equation of state 
+    neglecting the effect of pressure, i.e. simplified equation. Might add in pressure
+    dependence later. 
+
+    Inputs:
+    temperature: scalar or 1d array of temperature values in degrees Celsius
+    salinity : scalar or 1d array of salinity values in g/kg
+
+    Outputs:
+    density: scalar or 1d array of density values in kg/m^3
+    '''
+    
+    #check if the inputs are arrays or scalars and make them arrays if they are scalars
+    if np.isscalar(temperature):
+        temperature = np.array([temperature])
+    if np.isscalar(salinity):
+        salinity = np.array([salinity])
+    if np.isscalar(pressure):
+        pressure = np.array([pressure])
+
+    #Define coefficients
+    a0 = 999.842594
+    a1 = 6.793952*10**-2
+    a2 = -9.095290*10**-3
+    a3 = 1.001685*10**-4
+    a4 = -1.120083*10**-6
+    a5 = 6.536332*10**-9
+
+    b0 = 8.24493*10**-1
+    b1 = -4.0899*10**-3
+    b2 = 7.6438*10**-5
+    b3 = -8.2467*10**-7
+    b4 = 5.3875*10**-9
+
+    c0 = -5.72466*10**-3
+    c1 = 1.0227*10**-4
+    c2 = -1.6546*10**-6
+
+    d0 = 4.8314*10**-4
+
+    #Calculate density
+    density = a0 + a1*temperature + a2*temperature**2 + \
+        a3*temperature**3 + a4*temperature**4 + a5*temperature**5 + \
+            (b0 + b1*temperature + b2*temperature**2 + b3*temperature**3 \
+             + b4*temperature**4)*salinity + (c0 + c1*temperature + \
+                c2*temperature**2)*salinity**1.5 + d0*salinity**2
+
+    return density
+
+##########################################################################################
+
+def get_brsm(bubble_size_range=[0.1,10],
+             temperature=5,
+             salinity=35,
+             model=None,
+             tuning=None,
+             resolution=100):
+    '''
+    Function that uses different bubble rising speed models to return the bubble rising 
+    speed for all bubbles in the bubble size range with resolution resolution. 
+    Supported models are listed below in the Inputs section.
+
+    Inputs: #----------------------------------------------
+    bubble_size_range: 1d-array 
+        Array containing the minimum and maximum bubble size in mm.
+        Default is [0.1,2.5] mm
+    temperature: scalar 
+        Gives temperature values in degrees Celsius.
+        Default is 5 degrees Celsius
+    salinity: scalar 
+        Salinity in g/kg.
+        Default is 35 g/kg
+    model: string
+        bubble rising speed model.
+        Default is the model from Woolf (1993). 
+    
+        Alternatives are
+    
+        'Woolf1993' (Woolf, 1993). This is the default model. Linear increase in rising speed with 
+        bubble size, then constant at 0.25m s^-1 for all bubbles larger a certain threshold size. 
+
+        'Fan1990' (Fan and Tsuchiyua, 1990), has tuning input [c,d] which determines if the 
+        model is for freshwater/saltwater and clean/dirty bubbles. The c parameter is set
+        to 1.4 for seawater and 1.2 for pure freshwater. The d parameter is set to 1.6 for completely
+        clean bubbles and 0.8 for dirty bubbles. I'm guessing there are valid intermediate
+        values for these parameters as well, but see Fan & Tsuchiyua, 1990 and Leifer & Patro, 2002
+        for details.
+
+        'Woolf1991' (Woolf and Thorpe, 1991)
+
+        'Leifer2002' (Leifer & Patro, 2002)
+
+        'Veloso2015' (Leifer, 2000, clean bubbles)
+
+    tuning: Some models comes with different parameter settings related to e.g. 
+        clean/surfactant covered. See description of bubble rising speed models
+        for details. This parameter can be various things.  
+    
+    resolution: scalar
+        Number of points in the bubble size range to calculate the bubble rising speed for.    
+        Default is 100 points.
+        
+    
+    Outputs: #--------------------------------------------------
+    brsm: 2d-array
+        Array containing the bubble sizes in column 1 and the bubble rising speed for all bubbles 
+        in the bubble size range
+
+    #end
+    '''
+
+    ### Calculate input parameters
+    viscosity_sw= get_viscosity(temperature,salinity) #Viscosity of the seawater [Pa s]
+    density = get_density(temperature,salinity) #kg/m^3 #density of seawater [kg/m^3]
+    #Would be better to use gsw, but using this function to avoid dependencies. 
+    g_acc = 9.81 #m/s^2 #Gravitational acceleration [m/s^2]
+    surf_tens = 0.0728 #N/m #Surface tension of water is 72 dynes/cm, but some suggest 0.0728 N/m - 
+    #guessing this is the surface tension of seawater then. [N/m]
+    visc_kinematic = viscosity_sw/density #m^2/s #Kinematic viscosity of seawater [m^2/s]
+    #Recalculate the bubble size range to meters
+    bubble_size_range = np.array(bubble_size_range)/1000 #[m]
+
+    #Create the bubble array
+    b_size_array = np.linspace(bubble_size_range[0],bubble_size_range[1],resolution) #[mm]
+    BRSM = np.zeros((resolution,2)) #Bubble rising speed matrix
+    BRSM[:,0] = b_size_array #Bubble size array
+
+    #Check what model to use
+    if model == None:
+        model = 'Woolf1993'
+        print('No model chosen, using default model Woolf, 1993')
+
+    if model == 'Woolf1993':
+        BRSM[:,1] = 0.172*b_size_array**1.28*g_acc**0.76*visc_kinematic**-0.56
+        #Set all rs higher than 0.25 m/s to 0.25 m/s
+        BRSM[BRSM[:,1]>0.25,1] = 0.25
+    elif model == 'Fan1990':
+        if tuning == None:
+            print('This model needs tuning parameters, specify tuning parameters [c,d],'
+                  'see documentation for details. Using parameters for clean ' 
+                  'bubbles in seawater as default.')
+            c = 1.4
+            d = 1.6
+        else:
+            c = tuning[0]
+            d = tuning[1]
+        #Calculate the Morton number
+        Morton = (g_acc*viscosity_sw**4)/(density*surf_tens**3)
+        BRSM[:,1] = (((density*g_acc*b_size_array**2)/
+                        (3.68*(Morton**-0.038)*viscosity_sw))**-d+
+                    ((c*surf_tens)/(density*b_size_array)+
+                        g_acc*b_size_array)**(-d/2))**(-1/d)
+
+    return BRSM
